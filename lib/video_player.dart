@@ -818,23 +818,32 @@ class _VideoProgressIndicatorState extends State<VideoProgressIndicator> {
       progressIndicator = Stack(
         fit: StackFit.passthrough,
         children: <Widget>[
-          LinearProgressIndicator(
-            value: maxBuffering / duration,
-            valueColor: AlwaysStoppedAnimation<Color>(colors.bufferedColor),
-            backgroundColor: colors.backgroundColor,
+          ClipRRect(
+            borderRadius: BorderRadius.circular(50),
+            child: LinearProgressIndicator(
+              value: maxBuffering / duration,
+              valueColor: AlwaysStoppedAnimation<Color>(colors.bufferedColor),
+              backgroundColor: colors.backgroundColor,
+            ),
           ),
-          LinearProgressIndicator(
-            value: position / duration,
-            valueColor: AlwaysStoppedAnimation<Color>(colors.playedColor),
-            backgroundColor: Colors.transparent,
+          ClipRRect(
+            borderRadius: BorderRadius.circular(50),
+            child: LinearProgressIndicator(
+              value: position / duration,
+              valueColor: AlwaysStoppedAnimation<Color>(colors.playedColor),
+              backgroundColor: Colors.transparent,
+            ),
           ),
         ],
       );
     } else {
-      progressIndicator = LinearProgressIndicator(
-        value: null,
-        valueColor: AlwaysStoppedAnimation<Color>(colors.playedColor),
-        backgroundColor: colors.backgroundColor,
+      progressIndicator = ClipRRect(
+        borderRadius: BorderRadius.circular(50),
+        child: LinearProgressIndicator(
+          value: null,
+          valueColor: AlwaysStoppedAnimation<Color>(colors.playedColor),
+          backgroundColor: colors.backgroundColor,
+        ),
       );
     }
     final Widget paddedProgressIndicator = Padding(
