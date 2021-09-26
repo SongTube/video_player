@@ -90,6 +90,20 @@ class MethodChannelVideoPlayer extends VideoPlayerPlatform {
   }
 
   @override
+  Future<void> setVideoUrl(int textureId, String url) async {
+    await _api.setVideoUrl(StringMessage()
+      ..textureId = textureId
+      ..text = url);
+  }
+
+  @override
+  Future<void> setAudioUrl(int textureId, String url) async {
+    await _api.setAudioUrl(StringMessage()
+      ..textureId = textureId
+      ..text = url);
+  }
+
+  @override
   Future<void> seekTo(int textureId, Duration position) {
     return _api.seekTo(PositionMessage()
       ..textureId = textureId

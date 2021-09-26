@@ -523,6 +523,20 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
     return await _videoPlayerPlatform.getPosition(_textureId);
   }
 
+  // Change current video Url
+  Future<void> setVideoUrl(String url) async {
+    if (!_isDisposed) {
+      await _videoPlayerPlatform.setVideoUrl(_textureId, url);
+    }
+  }
+
+  // Change current audio Url
+  Future<void> setAudioUrl(String url) async {
+    if (!_isDisposed) {
+      await _videoPlayerPlatform.setAudioUrl(_textureId, url);
+    }
+  }
+
   /// Sets the video's current timestamp to be at [moment]. The next
   /// time the video is played it will resume from the given [moment].
   ///
