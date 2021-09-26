@@ -317,6 +317,7 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
         dataSourceDescription = DataSource(
           sourceType: DataSourceType.network,
           videoUri: videoDataSource,
+          audioUri: audioDataSource,
           audioAsset: audioDataSource,
           formatHint: formatHint,
           httpHeaders: httpHeaders,

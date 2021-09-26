@@ -129,8 +129,7 @@ public class VideoPlayerPlugin implements FlutterPlugin, VideoPlayerApi {
       String videoAssetLookupKey;
       String audioAssetLookupKey;
       if (arg.getPackageName() != null) {
-        videoAssetLookupKey =
-            flutterState.keyForAssetAndPackageName.get(arg.getVideoAsset(), arg.getPackageName());
+        videoAssetLookupKey = flutterState.keyForAssetAndPackageName.get(arg.getVideoAsset(), arg.getPackageName());
         audioAssetLookupKey = flutterState.keyForAssetAndPackageName.get(arg.getAudioAsset(), arg.getPackageName());
       } else {
         videoAssetLookupKey = flutterState.keyForAsset.get(arg.getVideoAsset());

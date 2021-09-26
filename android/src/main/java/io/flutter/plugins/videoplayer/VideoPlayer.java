@@ -6,9 +6,11 @@ package io.flutter.plugins.videoplayer;
 
 import static com.google.android.exoplayer2.Player.REPEAT_MODE_ALL;
 import static com.google.android.exoplayer2.Player.REPEAT_MODE_OFF;
+import static com.google.android.exoplayer2.mediacodec.MediaCodecInfo.TAG;
 
 import android.content.Context;
 import android.net.Uri;
+import android.util.Log;
 import android.view.Surface;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.ExoPlaybackException;
@@ -93,11 +95,13 @@ final class VideoPlayer {
 
     if (audioUri != null) {
       audioDataSourceFactory = buildFactory(context, audioUri);
+      Log.d("EXOPLAY", "VERGA ESTE LINK: " + audioDataSource);
       videoMediaSource = buildMediaSource(videoUri, videoDataSourceFactory, formatHint, context);
-      audioMediaSource = buildMediaSource(audioUri, audioDataSourceFactory, FORMAT_OTHER, context);
+      audioMediaSource = buildMediaSource(audioUri, audioDataSourceFactory, formatHint, context);
       MergingMediaSource mergedSource = new MergingMediaSource(videoMediaSource, audioMediaSource);
       exoPlayer.setMediaSource(mergedSource);
     } else {
+      Log.d("EXOPLAY", "VERGA NO SE BUILDEO: " + audioDataSource);
       videoMediaSource = buildMediaSource(videoUri, videoDataSourceFactory, formatHint, context);
       exoPlayer.setMediaSource(videoMediaSource);
     }
