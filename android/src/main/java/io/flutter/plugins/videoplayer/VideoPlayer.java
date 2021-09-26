@@ -94,7 +94,7 @@ final class VideoPlayer {
     if (audioUri != null) {
       audioDataSourceFactory = buildFactory(context, audioUri);
       videoMediaSource = buildMediaSource(videoUri, videoDataSourceFactory, formatHint, context);
-      audioMediaSource = buildMediaSource(audioUri, audioDataSourceFactory, formatHint, context);
+      audioMediaSource = buildMediaSource(audioUri, audioDataSourceFactory, FORMAT_OTHER, context);
       MergingMediaSource mergedSource = new MergingMediaSource(videoMediaSource, audioMediaSource);
       exoPlayer.setMediaSource(mergedSource);
     } else {
