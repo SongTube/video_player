@@ -120,6 +120,7 @@ final class VideoPlayer {
   }
 
   void setVideoUrl(Context context, String url) {
+    long currentPosition = exoPlayer.getCurrentPosition();
     exoPlayer.stop();
     videoMediaSource = buildMediaSource(Uri.parse(url), buildFactory(context, Uri.parse(url)), FORMAT_OTHER, context);
     if (audioMediaSource != null) {
@@ -128,6 +129,7 @@ final class VideoPlayer {
     } else {
       exoPlayer.setMediaSource(videoMediaSource);
     }
+    exoPlayer.seekTo(currentPosition);
     exoPlayer.prepare();
     exoPlayer.play();
   }
