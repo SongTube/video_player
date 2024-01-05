@@ -91,7 +91,10 @@ final class VideoPlayer {
     exoPlayer.setForegroundMode(true);
     httpHeaders = headers;
 
-    Uri videoUri = Uri.parse(videoDataSource);
+    Uri videoUri = null;
+    if (videoDataSource != null) {
+      videoUri = Uri.parse(videoDataSource);
+    }
     Uri audioUri = null;
     if (audioDataSource != null) {
       audioUri = Uri.parse(audioDataSource);
@@ -100,9 +103,12 @@ final class VideoPlayer {
     DataSource.Factory videoDataSourceFactory;
     DataSource.Factory audioDataSourceFactory;
 
-    videoDataSourceFactory = buildFactory(context, videoUri);
-
-    if (audioUri != null) {
+    if (videoUri == null && audioUri != null) {
+      audioDataSourceFactory = buildFactory(context, audioUri);
+      audioMediaSource = buildMediaSource(audioUri, audioDataSourceFactory, formatHint, context);
+      exoPlayer.setMediaSource(audioMediaSource);
+    } else if (audioUri != null) {
+      videoDataSourceFactory = buildFactory(context, videoUri);
       audioDataSourceFactory = buildFactory(context, audioUri);
       Log.d("EXOPLAY", "VERGA ESTE LINK: " + audioDataSource);
       videoMediaSource = buildMediaSource(videoUri, videoDataSourceFactory, formatHint, context);
@@ -111,6 +117,7 @@ final class VideoPlayer {
       exoPlayer.setMediaSource(mergedSource);
     } else {
       Log.d("EXOPLAY", "VERGA NO SE BUILDEO: " + audioDataSource);
+      videoDataSourceFactory = buildFactory(context, videoUri);
       videoMediaSource = buildMediaSource(videoUri, videoDataSourceFactory, formatHint, context);
       exoPlayer.setMediaSource(videoMediaSource);
     }
