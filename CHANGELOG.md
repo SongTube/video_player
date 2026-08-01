@@ -1,3 +1,21 @@
+## 2.4.0
+
+* Android: cut time-to-first-frame. `bufferForPlaybackMs` drops from 1500ms to
+  250ms, which is the dominant cost -- STATE_READY (what Dart's `initialize()`
+  awaits) requires that much buffered on *every* selected track, meaning both
+  the video and the audio stream when they are merged.
+* Android: buffering decisions now prioritise time over size thresholds, so a
+  high video bitrate no longer holds back the start of playback.
+* Android: HTTP now goes through OkHttp with a connection pool shared across
+  players, so the audio request can reuse or multiplex over the connection the
+  video request opened instead of paying a second DNS/TCP/TLS handshake.
+* Android: MediaCodec asynchronous queueing is forced on, and decoder fallback
+  enabled, to cut codec-init latency on pre-API-31 devices.
+* Android: the progressive loader re-checks whether it can start every 64KB
+  instead of every 1MB.
+* Android: added opt-in timing logs. `adb shell setprop log.tag.VideoPlayer
+  DEBUG` reports ms from prepare() to STATE_READY and to the first frame.
+
 ## 2.3.0
 
 * Migrated Android from com.google.android.exoplayer2 2.14.1 to androidx.media3

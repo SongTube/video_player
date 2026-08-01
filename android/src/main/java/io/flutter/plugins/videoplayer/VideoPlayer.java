@@ -9,6 +9,8 @@ import static androidx.media3.common.Player.REPEAT_MODE_OFF;
 
 import android.content.Context;
 import android.net.Uri;
+import android.os.SystemClock;
+import android.util.Log;
 import android.view.Surface;
 import androidx.annotation.OptIn;
 import androidx.media3.common.AudioAttributes;
@@ -23,8 +25,10 @@ import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
 import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DefaultDataSource;
-import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.datasource.HttpDataSource;
+import androidx.media3.datasource.okhttp.OkHttpDataSource;
 import androidx.media3.exoplayer.DefaultLoadControl;
+import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.dash.DashMediaSource;
 import androidx.media3.exoplayer.dash.DefaultDashChunkSource;
@@ -41,6 +45,9 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import okhttp3.ConnectionPool;
+import okhttp3.OkHttpClient;
 
 /**
  * Plays a video, optionally combining a separate video-only and audio-only source into a single
@@ -53,10 +60,72 @@ import java.util.Map;
  */
 @OptIn(markerClass = UnstableApi.class)
 final class VideoPlayer {
+  private static final String TAG = "VideoPlayer";
+
   private static final String FORMAT_SS = "ss";
   private static final String FORMAT_DASH = "dash";
   private static final String FORMAT_HLS = "hls";
   private static final String FORMAT_OTHER = "other";
+
+  /**
+   * How much media must be buffered before playback starts, in ms.
+   *
+   * <p>This is the dominant cost in time-to-first-frame. ExoPlayer only reaches STATE_READY once
+   * every selected track has this much buffered, and with a {@link MergingMediaSource} that means
+   * the video *and* the audio stream independently. The Flutter side awaits initialize(), which
+   * resolves on STATE_READY, so this value is paid before the first frame is ever shown.
+   *
+   * <p>media3's default is 2500ms and this fork previously used 1500ms. 250ms is enough to start
+   * decoding while the loader keeps filling toward {@link #MIN_BUFFER_MS} in the background.
+   */
+  private static final int BUFFER_FOR_PLAYBACK_MS = 250;
+
+  /**
+   * Buffer required to resume after a rebuffer. Kept higher than {@link #BUFFER_FOR_PLAYBACK_MS}
+   * so that recovering from a stall does not immediately stall again.
+   */
+  private static final int BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS = 1_000;
+
+  /** Steady-state buffer the loader works toward once playback has started. */
+  private static final int MIN_BUFFER_MS = 15_000;
+
+  private static final int MAX_BUFFER_MS = 50_000;
+
+  /**
+   * How often the progressive loader re-checks whether it should keep loading. The default is 1MB,
+   * which at high video bitrates is a coarse unit -- the LoadControl cannot notice that enough is
+   * buffered to start until a full chunk lands. 64KB makes the "can we start yet?" decision much
+   * more responsive without meaningfully more overhead.
+   */
+  private static final int CONTINUE_LOADING_CHECK_INTERVAL_BYTES = 64 * 1024;
+
+  /**
+   * Shared across every VideoPlayer instance so connections survive between items.
+   *
+   * <p>An adaptive YouTube item is two URLs (video-only + audio-only) that are normally served by
+   * the same googlevideo host. A shared pool lets the second request reuse the first's connection
+   * -- or multiplex over it when the host negotiates HTTP/2 -- instead of paying a second DNS +
+   * TCP + TLS handshake. Switching quality reuses it again rather than starting cold.
+   */
+  private static OkHttpClient sharedHttpClient;
+
+  private static synchronized OkHttpClient getSharedHttpClient() {
+    if (sharedHttpClient == null) {
+      sharedHttpClient =
+          new OkHttpClient.Builder()
+              .connectionPool(new ConnectionPool(8, 5, TimeUnit.MINUTES))
+              .retryOnConnectionFailure(true)
+              .connectTimeout(15, TimeUnit.SECONDS)
+              .readTimeout(15, TimeUnit.SECONDS)
+              .build();
+    }
+    return sharedHttpClient;
+  }
+
+  /** Set when prepare() is called, so the first frame can be timed against it. */
+  private long prepareStartedAtMs = 0;
+
+  private boolean firstFrameReported = false;
 
   private ExoPlayer exoPlayer;
 
@@ -93,10 +162,24 @@ final class VideoPlayer {
     exoPlayer = new ExoPlayer.Builder(context)
             .setLoadControl(new DefaultLoadControl.Builder()
               .setBufferDurationsMs(
-                      20000,
-                      60000,
-                      1500,
-                      1500).build())
+                      MIN_BUFFER_MS,
+                      MAX_BUFFER_MS,
+                      BUFFER_FOR_PLAYBACK_MS,
+                      BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS)
+              // Decide purely on buffered duration. Otherwise the byte-based
+              // target also has to be satisfied, and at high video bitrates that
+              // holds back the start of playback for no benefit.
+              .setPrioritizeTimeOverSizeThresholds(true)
+              .build())
+            .setRenderersFactory(
+              new DefaultRenderersFactory(context)
+                // If the primary decoder fails to initialise, fall back to
+                // another rather than surfacing an error.
+                .setEnableDecoderFallback(true)
+                // Feed MediaCodec from a separate thread. This is the default on
+                // API 31+; forcing it on cuts codec-init latency on older devices
+                // too, which is where the slow starts are most noticeable.
+                .forceEnableMediaCodecAsynchronousQueueing())
             .build();
     exoPlayer.setForegroundMode(true);
     httpHeaders = headers;
@@ -130,6 +213,7 @@ final class VideoPlayer {
       exoPlayer.setMediaSource(videoMediaSource);
     }
 
+    markPrepareStart();
     exoPlayer.prepare();
     setupVideoPlayer(eventChannel, textureEntry);
   }
@@ -145,6 +229,7 @@ final class VideoPlayer {
       exoPlayer.setMediaSource(videoMediaSource);
     }
     exoPlayer.seekTo(currentPosition);
+    markPrepareStart();
     exoPlayer.prepare();
     exoPlayer.play();
   }
@@ -158,6 +243,7 @@ final class VideoPlayer {
     } else {
       exoPlayer.setMediaSource(audioMediaSource);
     }
+    markPrepareStart();
     exoPlayer.prepare();
     exoPlayer.play();
   }
@@ -165,10 +251,14 @@ final class VideoPlayer {
   DataSource.Factory buildFactory(Context context, Uri uri) {
     DataSource.Factory dataSourceFactory;
     if (isHTTP(uri)) {
-      DefaultHttpDataSource.Factory httpDataSourceFactory =
-              new DefaultHttpDataSource.Factory()
-                      .setUserAgent("ExoPlayer")
-                      .setAllowCrossProtocolRedirects(true);
+      // OkHttp rather than DefaultHttpDataSource: it pools connections across
+      // instances and speaks HTTP/2, so the audio request can reuse (or
+      // multiplex over) the connection the video request just opened. It also
+      // follows redirects itself, which is what setAllowCrossProtocolRedirects
+      // was doing on the old factory.
+      HttpDataSource.Factory httpDataSourceFactory =
+              new OkHttpDataSource.Factory(getSharedHttpClient())
+                      .setUserAgent("ExoPlayer");
 
       if (httpHeaders != null && !httpHeaders.isEmpty()) {
         httpDataSourceFactory.setDefaultRequestProperties(httpHeaders);
@@ -227,7 +317,10 @@ final class VideoPlayer {
         return new HlsMediaSource.Factory(mediaDataSourceFactory)
             .createMediaSource(MediaItem.fromUri(uri));
       case C.CONTENT_TYPE_OTHER:
+        // Every googlevideo URL lands here: the path ends in "videoplayback"
+        // with no extension, so inferContentType cannot do better than OTHER.
         return new ProgressiveMediaSource.Factory(mediaDataSourceFactory)
+            .setContinueLoadingCheckIntervalBytes(CONTINUE_LOADING_CHECK_INTERVAL_BYTES)
             .createMediaSource(MediaItem.fromUri(uri));
       default:
         {
@@ -274,6 +367,7 @@ final class VideoPlayer {
               setBuffering(true);
               sendBufferingUpdate();
             } else if (playbackState == Player.STATE_READY) {
+              logSincePrepare("STATE_READY");
               if (!isInitialized) {
                 isInitialized = true;
                 sendInitialized();
@@ -290,11 +384,35 @@ final class VideoPlayer {
           }
 
           @Override
+          public void onRenderedFirstFrame() {
+            if (!firstFrameReported) {
+              firstFrameReported = true;
+              logSincePrepare("first frame");
+            }
+          }
+
+          @Override
           public void onPlayerError(final PlaybackException error) {
             setBuffering(false);
             eventSink.error("VideoError", "Video player had error " + error, null);
           }
         });
+  }
+
+  /**
+   * Starts the clock for the next time-to-first-frame measurement. Enable with
+   * {@code adb shell setprop log.tag.VideoPlayer DEBUG} and watch logcat to see where the time
+   * before playback actually goes.
+   */
+  private void markPrepareStart() {
+    prepareStartedAtMs = SystemClock.elapsedRealtime();
+    firstFrameReported = false;
+  }
+
+  private void logSincePrepare(String stage) {
+    if (prepareStartedAtMs != 0 && Log.isLoggable(TAG, Log.DEBUG)) {
+      Log.d(TAG, stage + " +" + (SystemClock.elapsedRealtime() - prepareStartedAtMs) + "ms");
+    }
   }
 
   void sendBufferingUpdate() {

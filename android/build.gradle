@@ -43,6 +43,11 @@ android {
         implementation 'androidx.media3:media3-exoplayer-hls:1.4.1'
         implementation 'androidx.media3:media3-exoplayer-dash:1.4.1'
         implementation 'androidx.media3:media3-exoplayer-smoothstreaming:1.4.1'
+        // OkHttp-backed DataSource. The video-only and audio-only streams of an
+        // adaptive YouTube item are served from the same host, so a shared
+        // connection pool + HTTP/2 lets them share one TCP/TLS handshake instead
+        // of paying for two. okhttp itself is already on the classpath.
+        implementation 'androidx.media3:media3-datasource-okhttp:1.4.1'
         testImplementation 'junit:junit:4.13.2'
         testImplementation 'org.mockito:mockito-inline:3.9.0'
     }
