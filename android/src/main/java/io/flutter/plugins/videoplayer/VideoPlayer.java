@@ -4,36 +4,36 @@
 
 package io.flutter.plugins.videoplayer;
 
-import static com.google.android.exoplayer2.Player.REPEAT_MODE_ALL;
-import static com.google.android.exoplayer2.Player.REPEAT_MODE_OFF;
-import static com.google.android.exoplayer2.mediacodec.MediaCodecInfo.TAG;
+import static androidx.media3.common.Player.REPEAT_MODE_ALL;
+import static androidx.media3.common.Player.REPEAT_MODE_OFF;
 
 import android.content.Context;
 import android.net.Uri;
-import android.util.Log;
 import android.view.Surface;
-import com.google.android.exoplayer2.C;
-import com.google.android.exoplayer2.DefaultLoadControl;
-import com.google.android.exoplayer2.ExoPlaybackException;
-import com.google.android.exoplayer2.Format;
-import com.google.android.exoplayer2.MediaItem;
-import com.google.android.exoplayer2.PlaybackParameters;
-import com.google.android.exoplayer2.Player;
-import com.google.android.exoplayer2.Player.Listener;
-import com.google.android.exoplayer2.SimpleExoPlayer;
-import com.google.android.exoplayer2.audio.AudioAttributes;
-import com.google.android.exoplayer2.source.MediaSource;
-import com.google.android.exoplayer2.source.MergingMediaSource;
-import com.google.android.exoplayer2.source.ProgressiveMediaSource;
-import com.google.android.exoplayer2.source.dash.DashMediaSource;
-import com.google.android.exoplayer2.source.dash.DefaultDashChunkSource;
-import com.google.android.exoplayer2.source.hls.HlsMediaSource;
-import com.google.android.exoplayer2.source.smoothstreaming.DefaultSsChunkSource;
-import com.google.android.exoplayer2.source.smoothstreaming.SsMediaSource;
-import com.google.android.exoplayer2.upstream.DataSource;
-import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory;
-import com.google.android.exoplayer2.upstream.DefaultHttpDataSource;
-import com.google.android.exoplayer2.util.Util;
+import androidx.annotation.OptIn;
+import androidx.media3.common.AudioAttributes;
+import androidx.media3.common.C;
+import androidx.media3.common.Format;
+import androidx.media3.common.MediaItem;
+import androidx.media3.common.PlaybackException;
+import androidx.media3.common.PlaybackParameters;
+import androidx.media3.common.Player;
+import androidx.media3.common.Player.Listener;
+import androidx.media3.common.util.UnstableApi;
+import androidx.media3.common.util.Util;
+import androidx.media3.datasource.DataSource;
+import androidx.media3.datasource.DefaultDataSource;
+import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.exoplayer.DefaultLoadControl;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.dash.DashMediaSource;
+import androidx.media3.exoplayer.dash.DefaultDashChunkSource;
+import androidx.media3.exoplayer.hls.HlsMediaSource;
+import androidx.media3.exoplayer.smoothstreaming.DefaultSsChunkSource;
+import androidx.media3.exoplayer.smoothstreaming.SsMediaSource;
+import androidx.media3.exoplayer.source.MediaSource;
+import androidx.media3.exoplayer.source.MergingMediaSource;
+import androidx.media3.exoplayer.source.ProgressiveMediaSource;
 import io.flutter.plugin.common.EventChannel;
 import io.flutter.view.TextureRegistry;
 import java.util.Arrays;
@@ -42,13 +42,23 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Plays a video, optionally combining a separate video-only and audio-only source into a single
+ * playback via {@link MergingMediaSource}. That merging behaviour is why this plugin is forked
+ * from the upstream video_player: adaptive YouTube streams above 720p ship video and audio as
+ * separate URLs, and upstream only accepts a single URI.
+ *
+ * <p>Most of the ExoPlayer surface in media3 is marked {@link UnstableApi}, so this class opts in
+ * once here rather than annotating every call site.
+ */
+@OptIn(markerClass = UnstableApi.class)
 final class VideoPlayer {
   private static final String FORMAT_SS = "ss";
   private static final String FORMAT_DASH = "dash";
   private static final String FORMAT_HLS = "hls";
   private static final String FORMAT_OTHER = "other";
 
-  private SimpleExoPlayer exoPlayer;
+  private ExoPlayer exoPlayer;
 
   private Surface surface;
 
@@ -80,7 +90,7 @@ final class VideoPlayer {
     this.textureEntry = textureEntry;
     this.options = options;
 
-    exoPlayer = new SimpleExoPlayer.Builder(context)
+    exoPlayer = new ExoPlayer.Builder(context)
             .setLoadControl(new DefaultLoadControl.Builder()
               .setBufferDurationsMs(
                       20000,
@@ -110,13 +120,11 @@ final class VideoPlayer {
     } else if (audioUri != null) {
       videoDataSourceFactory = buildFactory(context, videoUri);
       audioDataSourceFactory = buildFactory(context, audioUri);
-      Log.d("EXOPLAY", "VERGA ESTE LINK: " + audioDataSource);
       videoMediaSource = buildMediaSource(videoUri, videoDataSourceFactory, formatHint, context);
       audioMediaSource = buildMediaSource(audioUri, audioDataSourceFactory, formatHint, context);
       MergingMediaSource mergedSource = new MergingMediaSource(videoMediaSource, audioMediaSource);
       exoPlayer.setMediaSource(mergedSource);
     } else {
-      Log.d("EXOPLAY", "VERGA NO SE BUILDEO: " + audioDataSource);
       videoDataSourceFactory = buildFactory(context, videoUri);
       videoMediaSource = buildMediaSource(videoUri, videoDataSourceFactory, formatHint, context);
       exoPlayer.setMediaSource(videoMediaSource);
@@ -167,7 +175,7 @@ final class VideoPlayer {
       }
       dataSourceFactory = httpDataSourceFactory;
     } else {
-      dataSourceFactory = new DefaultDataSourceFactory(context, "ExoPlayer");
+      dataSourceFactory = new DefaultDataSource.Factory(context);
     }
     return dataSourceFactory;
   }
@@ -184,20 +192,20 @@ final class VideoPlayer {
       Uri uri, DataSource.Factory mediaDataSourceFactory, String formatHint, Context context) {
     int type;
     if (formatHint == null) {
-      type = Util.inferContentType(uri.getLastPathSegment());
+      type = Util.inferContentType(uri);
     } else {
       switch (formatHint) {
         case FORMAT_SS:
-          type = C.TYPE_SS;
+          type = C.CONTENT_TYPE_SS;
           break;
         case FORMAT_DASH:
-          type = C.TYPE_DASH;
+          type = C.CONTENT_TYPE_DASH;
           break;
         case FORMAT_HLS:
-          type = C.TYPE_HLS;
+          type = C.CONTENT_TYPE_HLS;
           break;
         case FORMAT_OTHER:
-          type = C.TYPE_OTHER;
+          type = C.CONTENT_TYPE_OTHER;
           break;
         default:
           type = -1;
@@ -205,20 +213,20 @@ final class VideoPlayer {
       }
     }
     switch (type) {
-      case C.TYPE_SS:
+      case C.CONTENT_TYPE_SS:
         return new SsMediaSource.Factory(
                 new DefaultSsChunkSource.Factory(mediaDataSourceFactory),
-                new DefaultDataSourceFactory(context, null, mediaDataSourceFactory))
+                new DefaultDataSource.Factory(context, mediaDataSourceFactory))
             .createMediaSource(MediaItem.fromUri(uri));
-      case C.TYPE_DASH:
+      case C.CONTENT_TYPE_DASH:
         return new DashMediaSource.Factory(
                 new DefaultDashChunkSource.Factory(mediaDataSourceFactory),
-                new DefaultDataSourceFactory(context, null, mediaDataSourceFactory))
+                new DefaultDataSource.Factory(context, mediaDataSourceFactory))
             .createMediaSource(MediaItem.fromUri(uri));
-      case C.TYPE_HLS:
+      case C.CONTENT_TYPE_HLS:
         return new HlsMediaSource.Factory(mediaDataSourceFactory)
             .createMediaSource(MediaItem.fromUri(uri));
-      case C.TYPE_OTHER:
+      case C.CONTENT_TYPE_OTHER:
         return new ProgressiveMediaSource.Factory(mediaDataSourceFactory)
             .createMediaSource(MediaItem.fromUri(uri));
       default:
@@ -282,7 +290,7 @@ final class VideoPlayer {
           }
 
           @Override
-          public void onPlayerError(final ExoPlaybackException error) {
+          public void onPlayerError(final PlaybackException error) {
             setBuffering(false);
             eventSink.error("VideoError", "Video player had error " + error, null);
           }
@@ -298,10 +306,10 @@ final class VideoPlayer {
     eventSink.success(event);
   }
 
-  @SuppressWarnings("deprecation")
-  private static void setAudioAttributes(SimpleExoPlayer exoPlayer, boolean isMixMode) {
+  private static void setAudioAttributes(ExoPlayer exoPlayer, boolean isMixMode) {
     exoPlayer.setAudioAttributes(
-        new AudioAttributes.Builder().setContentType(C.CONTENT_TYPE_MOVIE).build(), !isMixMode);
+        new AudioAttributes.Builder().setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),
+        !isMixMode);
   }
 
   void play() {

@@ -1,3 +1,15 @@
+## 2.3.0
+
+* Migrated Android from com.google.android.exoplayer2 2.14.1 to androidx.media3
+  1.4.1. ExoPlayer2 was discontinued after 2.19.1; media3 is its continuation.
+  Kept at the version just_audio uses so an app depending on both links a single
+  player stack. The MergingMediaSource video+audio behaviour is unchanged.
+* Android: set a `namespace`, dropped the AndroidManifest `package` attribute,
+  raised compileSdk to 36 and Java to 17, for Android Gradle Plugin 8 support.
+* Android: removed the leftover v1-embedding `registerWith` entry point, which
+  no longer compiles since Flutter removed `PluginRegistry.Registrar`.
+* Android: removed stray debug logging from the player constructor.
+
 ## 2.2.5
 
 * Support to closed caption WebVTT format added.
